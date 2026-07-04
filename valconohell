@@ -1312,7 +1312,7 @@ task.spawn(function()
                     task.wait(1)
                 end
                 
-                local item_victory = scrollingFrame:FindFirstChild("cl_lucky26_victory")
+                local item_victory = scrollingFrame:WaitForChild("cl_lucky26_victory", 3)
                 if item_victory then
                     local remaining = getAvailableCount(item_victory)
                     if remaining > 0 then
@@ -1320,6 +1320,8 @@ task.spawn(function()
                         task.wait(2)
                         TeleportService:Teleport(LOBBY_PLACE_ID, LP)
                     end
+                else
+                    print("🔄 [Quest Scanner] ⏳ ข้อมูลเควสยังโหลดไม่ครบ สกิปการเช็คครั้งนี้...")
                 end
                 
                 clickButton(collectablesBtn)
