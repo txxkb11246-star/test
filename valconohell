@@ -1312,9 +1312,9 @@ task.spawn(function()
                     task.wait(1)
                 end
                 
-                local item_mapfarm = scrollingFrame:FindFirstChild("cl_lucky26_mapfarm")
-                if item_mapfarm then
-                    local remaining = getAvailableCount(item_mapfarm)
+                local item_victory = scrollingFrame:FindFirstChild("cl_lucky26_victory")
+                if item_victory then
+                    local remaining = getAvailableCount(item_victory)
                     if remaining > 0 then
                         print("🔄 [Quest Scanner] ตรวจพบว่าเควสรายวันรีเซ็ตแล้ว (เหลือ: " .. tostring(remaining) .. ")! ทำการ Hop กลับ Lobby...")
                         task.wait(2)
