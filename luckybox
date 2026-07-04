@@ -557,22 +557,33 @@ end)
 -- [[ 2. ระบบ Auto Collect Luckybox ]] --
 -- ==================================================================
 task.spawn(function()
-    local CollectRemote = ReplicatedStorage:WaitForChild("RemoteFunctions"):WaitForChild("CollectCollectable")
+    local Workspace = game:GetService("Workspace")
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
     local function TryCollect(obj)
         if obj.Name == "Collectable" and obj:GetAttribute("CollectionId") == "lucky26" then
             local id = obj:GetAttribute("ID")
             if id and type(id) == "number" then
-                task.spawn(function() pcall(function() CollectRemote:InvokeServer(id) end) end)
+                task.spawn(function() 
+                    pcall(function() 
+                        local rf = ReplicatedStorage:FindFirstChild("RemoteFunctions")
+                        local cr = rf and rf:FindFirstChild("CollectCollectable")
+                        if cr then cr:InvokeServer(id) end
+                    end) 
+                end)
                 return true
             end
         end
         return false
     end
 
-    local children = Workspace:GetChildren()
-    for i = 1, #children do TryCollect(children[i]) end
     Workspace.ChildAdded:Connect(function(obj) task.wait(0.1); TryCollect(obj) end)
+    
+    while true do
+        local children = Workspace:GetChildren()
+        for i = 1, #children do TryCollect(children[i]) end
+        task.wait(5)
+    end
 end)
 
 -- ==================================================================
@@ -811,10 +822,10 @@ local function SetupLobbyToFarm()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
     
     local farmConfig = {
-        { pos = CFrame.new(85.05, 71.73, 788.8, 1,0,0,0,1,0,0,0,1), mapFunc = "LobbySetMap_7", playerFunc = "LobbySetMaxPlayers_7", startFunc = "StartLobby_7" },
-        { pos = CFrame.new(97.05, 71.73, 788.8, 1,0,0,0,1,0,0,0,1), mapFunc = "LobbySetMap_8", playerFunc = "LobbySetMaxPlayers_8", startFunc = "StartLobby_8" },
-        { pos = CFrame.new(109.05, 71.73, 788.8, 1,0,0,0,1,0,0,0,1), mapFunc = "LobbySetMap_6", playerFunc = "LobbySetMaxPlayers_6", startFunc = "StartLobby_6" },
-        { pos = CFrame.new(121.05, 71.73, 788.8, 1,0,0,0,1,0,0,0,1), mapFunc = "LobbySetMap_5", playerFunc = "LobbySetMaxPlayers_5", startFunc = "StartLobby_5" }
+        { pos = CFrame.new(85.05, 71.73, 788.8, 1,0,0,0,1,0,0,0,1), mapFunc = "LobbySetMap_8", playerFunc = "LobbySetMaxPlayers_8", startFunc = "StartLobby_8" },
+        { pos = CFrame.new(97.05, 71.73, 788.8, 1,0,0,0,1,0,0,0,1), mapFunc = "LobbySetMap_5", playerFunc = "LobbySetMaxPlayers_5", startFunc = "StartLobby_5" },
+        { pos = CFrame.new(109.05, 71.73, 788.8, 1,0,0,0,1,0,0,0,1), mapFunc = "LobbySetMap_7", playerFunc = "LobbySetMaxPlayers_7", startFunc = "StartLobby_7" },
+        { pos = CFrame.new(121.05, 71.73, 788.8, 1,0,0,0,1,0,0,0,1), mapFunc = "LobbySetMap_6", playerFunc = "LobbySetMaxPlayers_6", startFunc = "StartLobby_6" }
     }
 
     local function warpToFarm(cfg)
