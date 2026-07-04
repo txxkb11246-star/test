@@ -741,8 +741,7 @@ local function RunUserFarmCode()
             hasAppliedSettings = true
             task.spawn(function()
                 low(); mvol(); fxvol()
-                x2(); task.wait(5)
-                x3()
+                x2()
             end)
         end
 
