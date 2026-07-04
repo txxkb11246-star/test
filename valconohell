@@ -23,51 +23,47 @@ getgenv().VolcanoFarmActive = true
 task.spawn(function()
     local Workspace = game:GetService("Workspace")
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
-    local CollectRemote = ReplicatedStorage:WaitForChild("RemoteFunctions"):WaitForChild("CollectCollectable")
-
-    -- ฟังก์ชันสำหรับตรวจสอบและเก็บกล่อง
+    
     local function TryCollect(obj)
-        -- เช็คชื่อ Object
-        if obj.Name == "Collectable" then
-            -- เช็คว่าเป็นของอีเวนต์ lucky26
-            if obj:GetAttribute("CollectionId") == "lucky26" then
-                local id = obj:GetAttribute("ID")
-                local itemId = obj:GetAttribute("ItemId") or "ไม่ทราบชื่อ"
-                
-                if id and type(id) == "number" then
-                    -- แยก Thread ป้องกันสคริปต์ค้างจาก InvokeServer
-                    task.spawn(function()
-                        local success, result = pcall(function()
-                            return CollectRemote:InvokeServer(id)
-                        end)
-                        
-                        if success then
-                            print(string.format("🎁 [เก็บสำเร็จ] ชนิด: %s | ID: %d", tostring(itemId), id))
-                        else
-                            print(string.format("❌ [ล้มเหลว] ไม่สามารถเก็บ: %s | ID: %d", tostring(itemId), id))
+        if obj.Name == "Collectable" and obj:GetAttribute("CollectionId") == "lucky26" then
+            local id = obj:GetAttribute("ID")
+            local itemId = obj:GetAttribute("ItemId") or "ไม่ทราบชื่อ"
+            
+            if id and type(id) == "number" then
+                task.spawn(function()
+                    pcall(function()
+                        local rf = ReplicatedStorage:FindFirstChild("RemoteFunctions")
+                        local cr = rf and rf:FindFirstChild("CollectCollectable")
+                        if cr then
+                            local success = cr:InvokeServer(id)
+                            if success then
+                                print(string.format("🎁 [เก็บสำเร็จ] ชนิด: %s | ID: %d", tostring(itemId), id))
+                            else
+                                print(string.format("❌ [ล้มเหลว] ไม่สามารถเก็บ: %s | ID: %d", tostring(itemId), id))
+                            end
                         end
                     end)
-                    return true
-                end
+                end)
+                return true
             end
         end
         return false
     end
 
-    -- ระบบที่ 1: กวาดเก็บกล่องที่ตกค้างอยู่ใน Workspace ปัจจุบันทั้งหมด
-    local children = Workspace:GetChildren()
-    for i = 1, #children do
-        TryCollect(children[i])
-    end
-
-    -- ระบบที่ 2: ดักจับกล่องที่กำลังจะดรอปใหม่
     Workspace.ChildAdded:Connect(function(obj)
-        -- รอโหลด Attribute แป๊บนึงเผื่อเซิร์ฟเวอร์ส่งมาไม่ทัน
         task.wait(0.1)
         TryCollect(obj)
     end)
 
     print("✅ เริ่มทำงาน: ออโต้เก็บ Luckybox (lucky26) [Background Thread]")
+    
+    while true do
+        local children = Workspace:GetChildren()
+        for i = 1, #children do
+            TryCollect(children[i])
+        end
+        task.wait(5)
+    end
 end)
 -- [[ 🗑️ สิ้นสุด EVENT: AUTO COLLECT LUCKYBOX ]] --
 -- ==================================================================
@@ -1187,10 +1183,10 @@ local function StartLobbySystem()
 
     -- 📌 4. ระบบวาร์ปไปฟาร์ม (Volcano)
     local farmConfig = {
-        { pos = CFrame.new(172.604416, 72.2857971, 780.67865, -0.195122838, 0, -0.980778813, 0, 1, 0, 0.980778813, 0, -0.195122838), mapFunc = "LobbySetMap_35", playerFunc = "LobbySetMaxPlayers_35", startFunc = "StartLobby_38" },
-        { pos = CFrame.new(170.263336, 72.2857971, 792.448059, -0.195122838, 0, -0.980778813, 0, 1, 0, 0.980778813, 0, -0.195122838), mapFunc = "LobbySetMap_38", playerFunc = "LobbySetMaxPlayers_38", startFunc = "StartLobby_35" },
+        { pos = CFrame.new(172.604416, 72.2857971, 780.67865, -0.195122838, 0, -0.980778813, 0, 1, 0, 0.980778813, 0, -0.195122838), mapFunc = "LobbySetMap_38", playerFunc = "LobbySetMaxPlayers_38", startFunc = "StartLobby_38" },
+        { pos = CFrame.new(170.263336, 72.2857971, 792.448059, -0.195122838, 0, -0.980778813, 0, 1, 0, 0.980778813, 0, -0.195122838), mapFunc = "LobbySetMap_37", playerFunc = "LobbySetMaxPlayers_37", startFunc = "StartLobby_37" },
         { pos = CFrame.new(158.675308, 72.2857971, 777.880554, 0.195122838, 0, 0.980778813, 0, 1, 0, -0.980778813, 0, 0.195122838), mapFunc = "LobbySetMap_36", playerFunc = "LobbySetMaxPlayers_36", startFunc = "StartLobby_36" },
-        { pos = CFrame.new(156.334229, 72.2857971, 789.650024, 0.195122838, 0, 0.980778813, 0, 1, 0, -0.980778813, 0, 0.195122838), mapFunc = "LobbySetMap_37", playerFunc = "LobbySetMaxPlayers_37", startFunc = "StartLobby_37" }
+        { pos = CFrame.new(156.334229, 72.2857971, 789.650024, 0.195122838, 0, 0.980778813, 0, 1, 0, -0.980778813, 0, 0.195122838), mapFunc = "LobbySetMap_35", playerFunc = "LobbySetMaxPlayers_35", startFunc = "StartLobby_35" }
     }
 
     local function warpToFarm(cfg)
