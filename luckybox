@@ -1,1 +1,1001 @@
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local VirtualUser = game:GetService("VirtualUser")
+local HttpService = game:GetService("HttpService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local GuiService = game:GetService("GuiService")
+local CoreGui = game:GetService("CoreGui")
+local TeleportService = game:GetService("TeleportService")
+local Player = Players.LocalPlayer
+while not Player do
+    task.wait(0.1)
+    Player = Players.LocalPlayer
+end
+local LOBBY_PLACE_ID = 108533757090220
 
+local function isInLobby()
+    local map = Workspace:FindFirstChild("Map")
+    if not map then return false end
+    return map:FindFirstChild("Garden") ~= nil
+end
+
+-- [0] รอให้เกมโหลดเสร็จสมบูรณ์ และรอเพิ่มอีก 10 วินาทีตาม Flow ที่ต้องการ
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+task.wait(10)
+
+local isLobby = isInLobby()
+
+print(isLobby and "🚀 [AutoFarm] เกมโหลดเสร็จสมบูรณ์ (Lobby) เริ่มต้นระบบ Gatekeeper..." or "🚀 [AutoFarm] เกมโหลดเสร็จสมบูรณ์ (Match) เริ่มฟาร์ม...")
+
+-- ==================================================================
+-- [[ ⚙️ CONFIGURATIONS & VARIABLES ]] --
+-- ==================================================================
+local LogDisplayConfig = {
+    ["ShowSeeds"] = true,
+    ["ShowLuckyBlocks"] = true,
+    ["ShowTickets"] = false,
+    ["Show25Win"] = true,
+    ["ShowRafflesia"] = true,
+    ["ShowTomatoPlant"] = true,
+    ["ShowTrident"] = true
+}
+
+local AutoChangeConfig = {
+    ["EnableChangeIfMissingUnit"] = true
+}
+
+local BOX_ID_TRIDENT = "ub_underwater"
+local ROLL_LIMIT = 6000     
+local ROLL_AMOUNT = 10      
+local BATCH_TIMES = 10      
+
+local InventoryTableCache = nil
+local PlayerDataCache = nil
+local StatsDataCache = nil
+local cachedSeedsText = "0"
+local cachedLuckyBlocksText = "0"
+local cachedTicketsText = "0"
+local finalStatusReason = nil
+
+local CurrentActiveQuest = nil
+local forceRestartMatch = false
+
+-- ==================================================================
+-- [[ 1. LOWFX MODE (ถ้าอยู่ใน Match) ]]
+-- ==================================================================
+if not isLobby then
+    task.spawn(function()
+        local g = game
+        local l = g.Lighting
+        local t = g.Workspace.Terrain
+        local r = settings().Rendering
+        r.QualityLevel = 1
+        r.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level04
+        l.GlobalShadows = false; l.FogEnd = 9e9; l.Brightness = 0
+        l.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+        for _, v in pairs(l:GetChildren()) do
+            if v:IsA("PostEffect") or v:IsA("Sky") or v:IsA("Atmosphere") or v:IsA("SunRaysEffect") then v:Destroy() end
+        end
+        local function potatoify(v)
+            if v:IsA("BasePart") then
+                v.Material = Enum.Material.SmoothPlastic; v.Reflectance = 0; v.CastShadow = false
+                v.TopSurface = "Smooth"; v.BottomSurface = "Smooth"
+                if v:IsA("MeshPart") then v.TextureID = "" end
+            elseif v:IsA("Decal") or v:IsA("Texture") then v:Destroy()
+            elseif v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Smoke") or v:IsA("Fire") or v:IsA("Sparkles") then v.Enabled = false
+            elseif v:IsA("Shirt") or v:IsA("Pants") or v:IsA("ShirtGraphic") then v:Destroy()
+            end
+        end
+        for _, v in pairs(g:GetDescendants()) do pcall(function() potatoify(v) end) end
+        g.DescendantAdded:Connect(function(v) task.spawn(function() task.wait(); pcall(function() potatoify(v) end) end) end)
+        t.WaterWaveSize = 0; t.WaterWaveSpeed = 0; t.WaterReflectance = 0; t.WaterTransparency = 0
+        sethiddenproperty(t, "Decoration", false)
+    end)
+end
+
+-- ==================================================================
+-- [[ 2. AUTO CLOSE POPUP MOVED TO Match Setup ]]
+-- ==================================================================
+
+-- ==================================================================
+-- [[ 🔍 MEMORY SCANNER ]] --
+-- ==================================================================
+local function UpdateCurrenciesAndStatsFromMemory()
+    pcall(function()
+        if Player then
+            ReplicatedStorage:WaitForChild("RemoteFunctions"):WaitForChild("GetPlayerDisplayProfile"):InvokeServer(Player.Name)
+        end
+    end)
+    
+    local gc = getgc(true)
+    for i = 1, #gc do
+        local obj = gc[i]
+        if type(obj) == "table" then
+            local seeds = rawget(obj, "Seeds")
+            if type(seeds) == "number" then
+                local tickets = rawget(obj, "Tickets")
+                if type(tickets) == "number" then
+                    PlayerDataCache = obj
+                end
+            end
+            
+            local gamesWon = rawget(obj, "GamesWon")
+            if type(gamesWon) == "number" then
+                local timePlayed = rawget(obj, "TotalTimePlayed")
+                if type(timePlayed) == "number" then
+                    StatsDataCache = obj
+                end
+            end
+        end
+    end
+    table.clear(gc)
+    gc = nil
+end
+
+local function UpdateCurrenciesFromMemory()
+    pcall(function()
+        UpdateCurrenciesAndStatsFromMemory()
+        if PlayerDataCache then
+            if PlayerDataCache.Seeds then cachedSeedsText = tostring(PlayerDataCache.Seeds) end
+            if PlayerDataCache.LuckyBlocks then cachedLuckyBlocksText = tostring(PlayerDataCache.LuckyBlocks) end
+            if PlayerDataCache.Tickets then cachedTicketsText = tostring(PlayerDataCache.Tickets) end
+        end
+    end)
+end
+
+local function ScanRAMForInventory()
+    if type(getgc) ~= "function" then return nil end
+
+    local gc = getgc(true)
+    local inventoryTable = nil
+
+    for _, obj in ipairs(gc) do
+        if type(obj) == "table" then
+            pcall(function()
+                for key, value in pairs(obj) do
+                    if type(key) == "string" and string.find(key, "unique_") and type(value) == "table" then
+                        if value.ItemData and type(value.ItemData) == "table" and value.ItemData.ID then
+                            inventoryTable = obj
+                            break
+                        end
+                    end
+                end
+            end)
+            if inventoryTable then break end
+        end
+    end
+
+    if inventoryTable then
+        local parsedInv = {}
+        pcall(function()
+            for uid, data in pairs(inventoryTable) do
+                if type(uid) == "string" and string.find(uid, "unique_") then
+                    table.insert(parsedInv, {
+                        uid = uid,
+                        name = data.ItemData.ID or "Unknown",
+                        equipped = data.Equipped == true
+                    })
+                end
+            end
+        end)
+        table.clear(gc)
+        gc = nil
+        if #parsedInv > 0 then return parsedInv end
+    end
+    
+    table.clear(gc)
+    gc = nil
+    return nil
+end
+
+local function HasRafflesia()
+    local invData = ScanRAMForInventory()
+    if invData then
+        for _, item in ipairs(invData) do
+            if item.name == "unit_rafflesia" then return true end
+        end
+    end
+    return false
+end
+
+local function HasTomatoPlant()
+    local invData = ScanRAMForInventory()
+    if invData then
+        for _, item in ipairs(invData) do
+            if item.name == "unit_tomato_plant" then return true end
+        end
+    end
+    return false
+end
+
+local function GetTridentCount()
+    local invData = ScanRAMForInventory()
+    local count = 0
+    if invData then
+        for _, item in ipairs(invData) do
+            if item.name == "unit_trident" then count = count + 1 end
+        end
+    end
+    return count
+end
+
+local function GetCurrentSeeds()
+    pcall(function() if not PlayerDataCache then UpdateCurrenciesAndStatsFromMemory() end end)
+    if PlayerDataCache and type(PlayerDataCache.Seeds) == "number" then return PlayerDataCache.Seeds end
+    return 0
+end
+
+-- ==================================================================
+-- [[ 📡 HORST SYNC THREAD ]] --
+-- ==================================================================
+task.spawn(function()
+    while true do
+        pcall(function()
+            if not getgenv().HorstRunning then
+                getgenv().HorstConfig = {
+                    ["EnableLog"] = false, ["Whitescreen"] = false, ["EnableAddFriends"] = false,
+                    ["LockFps"] = { ["EnableLockFps"] = false, ["LockFpsAmount"] = 30 }
+                }
+                local url = "https://raw.githubusercontent.com/HorstSpaceX/last_update/main/on_loaded.lua"
+                local httpGetResult = game:HttpGet(url)
+                loadstring(httpGetResult)()
+                getgenv().HorstRunning = true
+            end
+        end)
+        task.wait(30)
+    end
+end)
+
+local LAST_HORST_MSG = ""
+local AccountChangeTriggered = false
+
+local function TriggerAccountChange(reason)
+    if AccountChangeTriggered then return end
+    AccountChangeTriggered = true
+    finalStatusReason = reason
+    
+    if _G.Horst_SetDescription then
+        UpdateCurrenciesFromMemory()
+        local hasRaff = HasRafflesia()
+        local hasTomato = HasTomatoPlant()
+        local tridentCount = GetTridentCount()
+        
+        local logParts = {}
+        if LogDisplayConfig.ShowSeeds then table.insert(logParts, string.format("🌱 %s", cachedSeedsText)) end
+        if LogDisplayConfig.ShowLuckyBlocks then table.insert(logParts, string.format("🍀 %s", cachedLuckyBlocksText)) end
+        if LogDisplayConfig.ShowTickets then table.insert(logParts, string.format("🎟️ %s", cachedTicketsText)) end
+        if LogDisplayConfig.Show25Win then
+            local winStr = "❌"
+            if StatsDataCache and type(StatsDataCache.GamesWon) == "number" then
+                if StatsDataCache.GamesWon >= 25 then winStr = "✅" end
+            end
+            table.insert(logParts, string.format("🏆 25Win: %s", winStr))
+        end
+        if LogDisplayConfig.ShowRafflesia then table.insert(logParts, string.format("🌸 Raff: %s", hasRaff and "✅" or "❌")) end
+        if LogDisplayConfig.ShowTomatoPlant then table.insert(logParts, string.format("🍅 Tomato: %s", hasTomato and "✅" or "❌")) end
+        if LogDisplayConfig.ShowTrident then table.insert(logParts, string.format("🔱 Trident: %d", tridentCount)) end
+        
+        local questName = "Loading..."
+        if CurrentActiveQuest == "Quest1" then questName = "Flower"
+        elseif CurrentActiveQuest == "Quest2" then questName = "MapFarm"
+        elseif CurrentActiveQuest == "AllDone" then questName = "AllDone"
+        end
+        table.insert(logParts, string.format("📜 Quest: %s", questName))
+
+        table.insert(logParts, string.format("⛔ %s", reason))
+        
+        local desc = table.concat(logParts, " , ")
+        local json_data = { ["Quest"] = desc }
+        local encode_json = HttpService:JSONEncode(json_data)
+        
+        pcall(function() _G.Horst_SetDescription(desc, encode_json) end)
+        print("📝 [Horst] Force Updated Log:", desc)
+    end
+    
+    if _G.Horst_AccountChangeDone then
+        local ok, err = pcall(function() return _G.Horst_AccountChangeDone() end)
+        if ok then print("✅ [Horst] Sent change ID command:", reason) else print("❌ [Horst] Failed:", tostring(err)) end
+    end
+end
+getgenv().TriggerAccountChange = TriggerAccountChange -- Expose for Gatekeeper
+
+task.spawn(function()
+    while true do
+        pcall(function()
+            if _G.Horst_SetDescription then
+                UpdateCurrenciesFromMemory()
+                
+
+
+                local hasRaff = HasRafflesia()
+                local hasTomato = HasTomatoPlant()
+                local tridentCount = GetTridentCount()
+                local logParts = {}
+                
+                if LogDisplayConfig.ShowSeeds then table.insert(logParts, string.format("🌱 %s", cachedSeedsText)) end
+                if LogDisplayConfig.ShowLuckyBlocks then table.insert(logParts, string.format("🍀 %s", cachedLuckyBlocksText)) end
+                if LogDisplayConfig.ShowTickets then table.insert(logParts, string.format("🎟️ %s", cachedTicketsText)) end
+                if LogDisplayConfig.Show25Win then
+                    local winStr = "❌"
+                    if StatsDataCache and type(StatsDataCache.GamesWon) == "number" then
+                        if StatsDataCache.GamesWon >= 25 then winStr = "✅" end
+                    end
+                    table.insert(logParts, string.format("🏆 25Win: %s", winStr))
+                end
+                if LogDisplayConfig.ShowRafflesia then table.insert(logParts, string.format("🌸 Raff: %s", hasRaff and "✅" or "❌")) end
+                if LogDisplayConfig.ShowTomatoPlant then table.insert(logParts, string.format("🍅 Tomato: %s", hasTomato and "✅" or "❌")) end
+                if LogDisplayConfig.ShowTrident then table.insert(logParts, string.format("🔱 Trident: %d", tridentCount)) end
+                
+                local questName = "Loading..."
+                if CurrentActiveQuest == "Quest1" then questName = "Flower"
+                elseif CurrentActiveQuest == "Quest2" then questName = "MapFarm"
+                elseif CurrentActiveQuest == "AllDone" then questName = "AllDone"
+                end
+                table.insert(logParts, string.format("📜 Quest: %s", questName))
+
+                if finalStatusReason then
+                    table.insert(logParts, string.format("⛔ %s", finalStatusReason))
+                end
+                
+                local desc = table.concat(logParts, " , ")
+                local json_data = { ["Quest"] = desc }
+                local encode_json = HttpService:JSONEncode(json_data)
+                
+                if desc ~= LAST_HORST_MSG then
+                    LAST_HORST_MSG = desc
+                    _G.Horst_SetDescription(desc, encode_json)
+                end
+            end
+        end)
+        task.wait(60)
+    end
+end)
+
+-- ==================================================================
+-- [[ 🎲 AUTO GACHA SYSTEM ]] --
+-- ==================================================================
+local function BanUnwantedUnitsTomato()
+    local BanEvent = ReplicatedStorage:WaitForChild("RemoteEvents"):WaitForChild("BanFromUnitBox")
+    local unitsToBan = {"unit_bamboo","unit_money_tree","unit_watermelon","unit_pineapple","unit_peas","unit_gnome_npc","unit_broccoli","unit_farmer_npc","unit_palm_tree"}
+    for _, unitName in ipairs(unitsToBan) do
+        BanEvent:FireServer("ub_classic", unitName, true)
+        task.wait(0.1)
+    end
+    BanEvent:FireServer("ub_classic", "unit_tomato_plant", false)
+end
+
+local function RollBoxTomato()
+    if GetCurrentSeeds() <= ROLL_LIMIT then return false end
+    local BuyFunction = ReplicatedStorage:WaitForChild("RemoteFunctions"):WaitForChild("BuyUnitBox")
+    pcall(function() BuyFunction:InvokeServer("ub_classic_v2", 10) end)
+    return true
+end
+
+local function StartAutoGachaTomato()
+    if HasTomatoPlant() then return end
+    BanUnwantedUnitsTomato()
+    while true do
+        if not RollBoxTomato() then break end
+        task.wait(2)
+        if HasTomatoPlant() then break end
+    end
+end
+
+local function SetupBanListTrident()
+    local BanEvent = ReplicatedStorage:WaitForChild("RemoteEvents"):WaitForChild("BanFromUnitBox")
+    local BANNED_UNITS = {"unit_kelp", "unit_coral", "unit_mermaid", "unit_bubble_flower", "unit_aquasia", "unit_ink_sprout"}
+    for _, unitName in ipairs(BANNED_UNITS) do
+        BanEvent:FireServer(BOX_ID_TRIDENT, unitName, true)
+        task.wait(0.1) 
+    end
+    BanEvent:FireServer(BOX_ID_TRIDENT, "unit_trident", false)
+end
+
+local function RollBoxBatchTrident(times)
+    local BuyFunction = ReplicatedStorage:WaitForChild("RemoteFunctions"):WaitForChild("BuyUnitBox")
+    for i = 1, times do
+        if GetCurrentSeeds() <= ROLL_LIMIT then return false end
+        pcall(function() BuyFunction:InvokeServer(BOX_ID_TRIDENT, ROLL_AMOUNT) end)
+        task.wait(0.5)
+    end
+    return true
+end
+
+local function StartAutoGachaTrident()
+    if GetTridentCount() > 0 then return end
+    SetupBanListTrident()
+    while true do
+        if not RollBoxBatchTrident(BATCH_TIMES) then break end
+        task.wait(2) 
+        if GetTridentCount() > 0 then break end
+    end
+end
+
+-- ==================================================================
+-- [[ 🛡️ GATEKEEPER ]] --
+-- ==================================================================
+local function GatekeeperCheck()
+    UpdateCurrenciesAndStatsFromMemory()
+    
+    if StatsDataCache and type(StatsDataCache.GamesWon) == "number" then
+        if StatsDataCache.GamesWon < 25 then
+            warn("⚠️ 25Win Not Reached! Changing account ID...")
+            getgenv().TriggerAccountChange("Change Account (Not 25Win)")
+            return false
+        end
+    end
+
+    local SetUnitEquippedRF = ReplicatedStorage:WaitForChild("RemoteFunctions"):WaitForChild("SetUnitEquipped")
+
+    local invData = nil
+    while not invData do
+        invData = ScanRAMForInventory()
+        if not invData then task.wait(1.5) end
+    end
+
+    local raffUID, tridentUID, tomatoUID = nil, nil, nil
+    local equippedUIDs = {}
+
+    for _, item in ipairs(invData) do
+        if item.name == "unit_rafflesia" then raffUID = item.uid end
+        if item.name == "unit_trident" then tridentUID = item.uid end
+        if item.name == "unit_tomato_plant" then tomatoUID = item.uid end
+        if item.equipped then table.insert(equippedUIDs, item.uid) end
+    end
+
+    if not raffUID or not tridentUID or not tomatoUID then
+        local missing = {}
+        if not raffUID then table.insert(missing, "Rafflesia") end
+        if not tridentUID then table.insert(missing, "Trident") end
+        if not tomatoUID then table.insert(missing, "Tomato") end
+        
+        local missingStr = table.concat(missing, " & ")
+        warn("⚠️ No " .. missingStr .. " found! Changing account ID...")
+        getgenv().TriggerAccountChange("Change Account (No " .. missingStr .. ")")
+        return false 
+    end
+    
+    for _, uid in ipairs(equippedUIDs) do
+        pcall(function() SetUnitEquippedRF:InvokeServer(uid, false) end)
+        task.wait(0.2)
+    end
+
+    pcall(function() SetUnitEquippedRF:InvokeServer(raffUID, true) end)
+    task.wait(0.3)
+    pcall(function() SetUnitEquippedRF:InvokeServer(tridentUID, true) end)
+    task.wait(0.3)
+    pcall(function() SetUnitEquippedRF:InvokeServer(tomatoUID, true) end)
+    
+    return true
+end
+
+-- ==================================================================
+-- [[ 🚀 SYSTEM BOOTUP (GATEKEEPER) ]] --
+-- ==================================================================
+if isLobby then
+    StartAutoGachaTomato()
+    task.wait(1)
+    StartAutoGachaTrident()
+
+    local canStartFarm = GatekeeperCheck()
+    if not canStartFarm then
+        print("🛑 [STOP] ติดเงื่อนไข Gatekeeper สคริปต์หยุดทำงานและรอเปลี่ยนไอดี")
+        return 
+    end
+end
+
+-- ==================================================================
+-- [[ 1. ระบบ Anti-AFK (Simple VIM Mode) ]] --
+-- ==================================================================
+task.spawn(function()
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "SimpleVIM_UI"
+    sg.Parent = Player:WaitForChild("PlayerGui")
+
+    local dot = Instance.new("Frame")
+    dot.Size = UDim2.new(0, 10, 0, 10)
+    dot.Position = UDim2.new(0, 30, 1, -30)
+    dot.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+    dot.BorderSizePixel = 0
+    dot.ZIndex = 999
+    dot.Parent = sg
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 2
+    stroke.Color = Color3.fromRGB(0, 0, 0)
+    stroke.Parent = dot
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(1, 0)
+    corner.Parent = dot
+
+    while true do
+        local waitTime = math.random(30, 80)
+        task.wait(waitTime)
+        pcall(function()
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new(math.random(1, 50), math.random(1, 50)))
+        end)
+    end
+end)
+
+-- ==================================================================
+-- [[ 2.5 ระบบ Auto Close Popup (Focus+Enter) ]]
+-- ==================================================================
+task.spawn(function()
+    local vim = VirtualInputManager
+    while true do
+        pcall(function()
+            local overlay = CoreGui:FindFirstChild("FoundationOverlay")
+            if not overlay then return end
+            local btn = overlay:FindFirstChild("SafeAreaFrame")
+                and overlay.SafeAreaFrame:FindFirstChild("OverlayPortal")
+                and overlay.SafeAreaFrame.OverlayPortal:FindFirstChild("SheetContainer")
+                and overlay.SafeAreaFrame.OverlayPortal.SheetContainer:FindFirstChild("Frame")
+                and overlay.SafeAreaFrame.OverlayPortal.SheetContainer.Frame:FindFirstChild("Sheet")
+                and overlay.SafeAreaFrame.OverlayPortal.SheetContainer.Frame.Sheet:FindFirstChild("Content")
+                and overlay.SafeAreaFrame.OverlayPortal.SheetContainer.Frame.Sheet.Content:FindFirstChild("Header")
+                and overlay.SafeAreaFrame.OverlayPortal.SheetContainer.Frame.Sheet.Content.Header:FindFirstChild("Content")
+                and overlay.SafeAreaFrame.OverlayPortal.SheetContainer.Frame.Sheet.Content.Header.Content:FindFirstChild("CloseAffordance")
+            if btn and btn.Visible then
+                GuiService.SelectedCoreObject = btn
+                task.wait(0.1)
+                vim:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+                task.wait(0.1)
+                vim:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+                print("\240\159\148\146 Popup closed via Focus+Enter")
+            end
+        end)
+        task.wait(1)
+    end
+end)
+
+-- ==================================================================
+-- [[ 2. ระบบ Auto Collect Luckybox ]] --
+-- ==================================================================
+task.spawn(function()
+    local CollectRemote = ReplicatedStorage:WaitForChild("RemoteFunctions"):WaitForChild("CollectCollectable")
+
+    local function TryCollect(obj)
+        if obj.Name == "Collectable" and obj:GetAttribute("CollectionId") == "lucky26" then
+            local id = obj:GetAttribute("ID")
+            if id and type(id) == "number" then
+                task.spawn(function() pcall(function() CollectRemote:InvokeServer(id) end) end)
+                return true
+            end
+        end
+        return false
+    end
+
+    local children = Workspace:GetChildren()
+    for i = 1, #children do TryCollect(children[i]) end
+    Workspace.ChildAdded:Connect(function(obj) task.wait(0.1); TryCollect(obj) end)
+end)
+
+-- ==================================================================
+-- [[ 3. Quest Modules (Flower, MapFarm) ]] --
+-- ==================================================================
+local function ReturnToLobby()
+    print("✈️ [Teleport] เควสเสร็จสิ้น กำลังกลับ Lobby...")
+    while true do
+        pcall(function()
+            TeleportService:Teleport(LOBBY_PLACE_ID, Player)
+        end)
+        task.wait(5)
+    end
+end
+
+local function DoQuestFlower()
+    local Character = Player.Character or Player.CharacterAdded:Wait()
+    local HRP = Character:WaitForChild("HumanoidRootPart")
+    
+    local mapFolder = Workspace:FindFirstChild("Map")
+    if not mapFolder then return false end
+    
+    local flowerPrompts = {}
+    for _, desc in ipairs(mapFolder:GetDescendants()) do
+        if desc:IsA("ProximityPrompt") and desc.Name == "FlowerPrompt" and desc.Parent then
+            local part = desc:FindFirstAncestorWhichIsA("BasePart")
+            if part and part.Transparency == 0 then table.insert(flowerPrompts, desc) end
+        end
+    end
+    
+    if #flowerPrompts == 0 then return false end
+    
+    for idx, prompt in ipairs(flowerPrompts) do
+        if CurrentActiveQuest ~= "Quest1" then return false end
+        if prompt and prompt.Parent then
+            local part = prompt:FindFirstAncestorWhichIsA("BasePart")
+            if part then
+                HRP.CFrame = part.CFrame + Vector3.new(0, 3, 0)
+                HRP.Velocity = Vector3.new(0, 0, 0) 
+                task.wait(1)
+                for i = 1, 5 do
+                    if CurrentActiveQuest ~= "Quest1" then break end
+                    if prompt and prompt.Parent then
+                        fireproximityprompt(prompt)
+                        task.wait(0.4)
+                    end
+                end
+                task.wait(1)
+            end
+        end
+    end
+    return true
+end
+
+local function DoQuest25WinFarm()
+    print("🍅 STARTING MAP FARM LOGIC (QUEST 2)...")
+    
+    local RemoteFunctions = ReplicatedStorage:WaitForChild("RemoteFunctions")
+    local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
+    local PlaceUnit = RemoteFunctions:WaitForChild("PlaceUnit")
+    local UpgradeUnit = RemoteFunctions:WaitForChild("UpgradeUnit")
+    local ChangeTickSpeed = RemoteFunctions:WaitForChild("ChangeTickSpeed")
+    
+    local hpConnection = nil
+    local placedUnits = {}
+    local hasAppliedSettings = false
+
+    local unitBases = { 
+        Vector3.new(-332.06, 61.68, -133.44), Vector3.new(-332.03, 61.68, -129.35), 
+        Vector3.new(-328.53, 61.68, -133.47), Vector3.new(-328.60, 61.68, -129.72), 
+        Vector3.new(-331.86, 61.68, -124.83), Vector3.new(-328.18, 61.68, -125.21), 
+        Vector3.new(-324.44, 61.68, -133.87), Vector3.new(-324.18, 61.68, -128.84), 
+        Vector3.new(-320.98, 61.68, -133.42), Vector3.new(-320.60, 61.68, -128.63), 
+        Vector3.new(-327.70, 61.68, -120.67), Vector3.new(-331.38, 61.68, -119.84), 
+        Vector3.new(-316.99, 61.68, -128.76), Vector3.new(-316.98, 61.68, -132.82), 
+        Vector3.new(-338.77, 61.68, -217.81) 
+    }
+    
+    local function setSpeed(multiplier) pcall(function() ChangeTickSpeed:InvokeServer(multiplier) end) end
+    local function x2() setSpeed(2) end
+    local function x3() setSpeed(3) end
+    local function low() pcall(function() RemoteFunctions.ChangeSetting:InvokeServer("st_graphics", 2) end) end
+    local function mvol() pcall(function() RemoteFunctions.ChangeSetting:InvokeServer("st_background_music_volume", 1) end) end
+    local function fxvol() pcall(function() RemoteFunctions.ChangeSetting:InvokeServer("st_fx_volume", 1) end) end
+
+    local function activateAutoSkip()
+        task.spawn(function()
+            local gui = Player.PlayerGui:WaitForChild("GameGuiNoInset", 30)
+            if not gui then return end
+            local btn = gui:WaitForChild("Screen", 10):WaitForChild("Top", 10):WaitForChild("WaveControls", 10):WaitForChild("AutoSkip", 10)
+            if not btn then return end
+            local title = btn:WaitForChild("Title", 10)
+
+            while task.wait(1) do
+                if forceRestartMatch then break end 
+                if title.Text == "Auto Skip: Off" then
+                    pcall(function() for _, conn in ipairs(getconnections(btn.MouseButton1Click)) do conn:Fire() end end)
+                end
+            end
+        end)
+    end
+
+    local function waitUntilCash(target) 
+        local gui = Player:WaitForChild("PlayerGui"):WaitForChild("GameGui", 60)
+        if not gui then return end
+        local screen = gui:WaitForChild("Screen", 60)
+        if not screen then return end
+        local bottom = screen:WaitForChild("Bottom", 60)
+        if not bottom then return end
+        local currencyDisplay = bottom:WaitForChild("CurrencyDisplay", 60)
+        if not currencyDisplay then return end
+        local cashLabel = currencyDisplay:WaitForChild("Cash", 60)
+        if not cashLabel then return end
+        
+        while true do 
+            if forceRestartMatch then return end
+            local cleanCashStr = cashLabel.Text:gsub("[^%d]", "")
+            local currentCash = tonumber(cleanCashStr) or 0
+            if currentCash >= target then break end
+            task.wait(0.3) 
+        end 
+    end
+    
+    local function findNewUnitId(unitName) 
+        unitName = unitName or "unit_tomato_plant"
+        for _, u in pairs(Workspace.Map.Entities:GetChildren()) do 
+            local id = u:GetAttribute("ID")
+            if u.Name == unitName and id and not placedUnits[id] then 
+                placedUnits[id] = u
+                return id 
+            end 
+        end
+        return nil 
+    end
+    
+    local function placeUnitSafe(basePos) 
+        local id = nil
+        repeat 
+            if forceRestartMatch then return nil end
+            local ang = math.random() * math.pi * 2
+            local r = math.sqrt(math.random()) * 1.5
+            local tPos = Vector3.new(basePos.X + math.cos(ang) * r, basePos.Y, basePos.Z + math.sin(ang) * r)
+            
+            pcall(function() 
+                PlaceUnit:InvokeServer("unit_tomato_plant", {
+                    Valid = true, PathIndex = 1, Position = tPos, 
+                    DistanceAlongPath = 0, CF = CFrame.new(tPos), Rotation = 180
+                }) 
+            end)
+            
+            task.wait(0.5)
+            id = findNewUnitId("unit_tomato_plant") 
+        until id ~= nil or forceRestartMatch
+        return id 
+    end
+    
+    local function upgradeUnitById(id) 
+        if id and placedUnits[id] then pcall(function() UpgradeUnit:InvokeServer(id) end) end 
+    end
+
+    local function again()
+        pcall(function() RemoteFunctions.RestartGame:InvokeServer() end)
+    end
+
+    local function monitorBaseHP()
+        task.spawn(function()
+            local map = Workspace:WaitForChild("Map", 60)
+            if not map then return end
+            local baseHP = map:WaitForChild("BaseHP", 60)
+            if not baseHP then return end
+            local function checkHP()
+                pcall(function()
+                    local val = baseHP.Value
+                    if tonumber(val) and tonumber(val) <= 0 and not forceRestartMatch then
+                        forceRestartMatch = true
+                        task.wait(3)
+                        again()
+                    end
+                end)
+            end
+            checkHP()
+            pcall(function() hpConnection = baseHP.Changed:Connect(checkHP) end)
+        end)
+    end
+
+    RemoteEvents.ShowGameEnd.OnClientEvent:Connect(function()
+        if not forceRestartMatch then
+            forceRestartMatch = true
+            task.wait(3)
+            again()
+        end
+    end)
+
+    local function runSession()
+        forceRestartMatch = false
+        placedUnits = {}
+        if hpConnection then hpConnection:Disconnect(); hpConnection = nil end
+        monitorBaseHP()
+        activateAutoSkip()
+
+        if not hasAppliedSettings then
+            hasAppliedSettings = true
+            task.spawn(function()
+                low(); mvol(); fxvol()
+                x2()
+            end)
+        end
+
+        task.wait(2)
+        pcall(function() RemoteFunctions:WaitForChild("PlaceDifficultyVote"):InvokeServer("dif_easy") end)
+        task.wait(5)
+        
+        for i = 1, 15 do 
+            if forceRestartMatch then break end
+            local id = placeUnitSafe(unitBases[i])
+            if id then 
+                waitUntilCash(125); upgradeUnitById(id)
+                waitUntilCash(175); upgradeUnitById(id)
+                waitUntilCash(350); upgradeUnitById(id)
+                waitUntilCash(500); upgradeUnitById(id) 
+            end
+            task.wait(0.2) 
+        end
+        
+        while not forceRestartMatch do task.wait(0.5) end
+    end
+
+    while CurrentActiveQuest == "Quest2" do
+        runSession()
+        task.wait(2)
+    end
+end
+
+local function SetupLobbyToFarm()
+    print("🏠 [Teleport] กำลังเดินหาประตูวาปไป map_farm (Quest 2)...")
+    local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
+    
+    local farmConfig = {
+        { pos = CFrame.new(85.05, 71.73, 788.8, 1,0,0,0,1,0,0,0,1), mapFunc = "LobbySetMap_7", playerFunc = "LobbySetMaxPlayers_7", startFunc = "StartLobby_7" },
+        { pos = CFrame.new(97.05, 71.73, 788.8, 1,0,0,0,1,0,0,0,1), mapFunc = "LobbySetMap_8", playerFunc = "LobbySetMaxPlayers_8", startFunc = "StartLobby_8" },
+        { pos = CFrame.new(109.05, 71.73, 788.8, 1,0,0,0,1,0,0,0,1), mapFunc = "LobbySetMap_6", playerFunc = "LobbySetMaxPlayers_6", startFunc = "StartLobby_6" },
+        { pos = CFrame.new(121.05, 71.73, 788.8, 1,0,0,0,1,0,0,0,1), mapFunc = "LobbySetMap_5", playerFunc = "LobbySetMaxPlayers_5", startFunc = "StartLobby_5" }
+    }
+
+    local function warpToFarm(cfg)
+        local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then hrp.CFrame = cfg.pos end
+    end
+
+    local function setupLobby(cfg)
+        task.wait(4)
+        rf:WaitForChild(cfg.mapFunc):InvokeServer("map_farm")
+        task.wait(1)
+        for i = 3, 1, -1 do
+            rf:WaitForChild(cfg.playerFunc):InvokeServer(i)
+            task.wait(0.5)
+        end
+        task.wait(1)
+        pcall(function() rf:WaitForChild(cfg.startFunc):InvokeServer() end)
+        task.wait(4)
+    end
+
+    while CurrentActiveQuest == "Quest2" and isLobby do
+        local randomWait = math.random(1, 5)
+        task.wait(randomWait)
+
+        local index = math.random(1, #farmConfig)
+        local cfg = farmConfig[index]
+        
+        warpToFarm(cfg)
+        setupLobby(cfg)
+        
+        if isLobby then
+            pcall(function()
+                local closeBtn = Player.PlayerGui.GameGui.Screen.Middle.MapPickerLobby.Items.Close
+                for _, conn in ipairs(getconnections(closeBtn.MouseButton1Click)) do conn:Fire() end
+            end)
+            task.wait(1)
+        end
+    end
+end
+
+-- ==================================================================
+-- [[ 4. ระบบ Auto Quest Scanner & State Manager ]] --
+-- ==================================================================
+task.spawn(function()
+    local function safeFind(parent, pathTable)
+        local current = parent
+        for _, name in ipairs(pathTable) do
+            current = current:FindFirstChild(name)
+            if not current then return nil end
+        end
+        return current
+    end
+    
+    local function getGuiPaths()
+        local PlayerGui = Player:FindFirstChild("PlayerGui")
+        if not PlayerGui then return nil, nil end
+        local GameGui = PlayerGui:FindFirstChild("GameGui")
+        if not GameGui then return nil, nil end
+        
+        local collectablesBtn = safeFind(GameGui, {"Screen", "Left", "Sidebar", "Items", "Collectables", "Items", "Button"})
+        local scrollingFrame = safeFind(GameGui, {"Screen", "Middle", "Collectables", "Items", "Frame", "Top", "ScrollingFrame"})
+        return collectablesBtn, scrollingFrame
+    end
+
+    local function clickButton(button)
+        local clicked = false
+        if getconnections then
+            for _, connection in ipairs(getconnections(button.MouseButton1Click)) do
+                if type(connection.Fire) == "function" then connection:Fire(); clicked = true
+                elseif type(connection.Function) == "function" then connection.Function(); clicked = true end
+            end
+        end
+        if not clicked and firesignal then firesignal(button.MouseButton1Click) end
+    end
+
+    local function isDataLoaded(scrollingFrame)
+        for _, child in ipairs(scrollingFrame:GetChildren()) do
+            if child:IsA("GuiObject") and child.Name ~= "Template" and child.Name:match("^cl_") then return true end
+        end
+        return false
+    end
+
+    local function getAvailableCount(itemNode)
+        local ownedNode = itemNode:FindFirstChild("Button") and itemNode.Button:FindFirstChild("Owned")
+        if ownedNode and ownedNode:IsA("TextLabel") then
+            local rawText = ownedNode.Text
+            local _, m2 = rawText:match("(%d+)%s*owned%s*/%s*(%d+)%s*available")
+            if m2 then return tonumber(m2) end
+            _, m2 = rawText:match("(%d+)%s*/%s*(%d+)")
+            if m2 then return tonumber(m2) end
+        end
+        return 999 
+    end
+
+    while true do
+        local collectablesBtn, scrollingFrame = getGuiPaths()
+        if collectablesBtn and scrollingFrame then
+            -- บังคับเปิด UI
+            clickButton(collectablesBtn)
+            task.wait(1)
+            
+            -- กดเลือก Tab lucky26 (Part 1)
+            local gameGui = Player:WaitForChild("PlayerGui", 5):FindFirstChild("GameGui")
+            if gameGui then
+                local tab = gameGui.Screen.Middle.Collectables:FindFirstChild("Right") and gameGui.Screen.Middle.Collectables.Right:FindFirstChild("lucky26")
+                if tab then
+                    clickButton(tab)
+                    task.wait(1)
+                end
+            end
+            
+            if isDataLoaded(scrollingFrame) then
+                task.wait(1)
+                
+                -- Check Quest 1 (Flower)
+                local item_flower = scrollingFrame:FindFirstChild("cl_lucky26_flower")
+                local q1_done = false
+                if item_flower then
+                    q1_done = (getAvailableCount(item_flower) == 0)
+                end
+                
+                -- Check Quest 2 (MapFarm + Victory)
+                local item_mapfarm = scrollingFrame:FindFirstChild("cl_lucky26_mapfarm")
+                local item_victory = scrollingFrame:FindFirstChild("cl_lucky26_victory")
+                local q2_farm_done = false
+                local q2_vic_done = false
+                
+                if item_mapfarm then q2_farm_done = (getAvailableCount(item_mapfarm) == 0) end
+                if item_victory then q2_vic_done = (getAvailableCount(item_victory) == 0) end
+                local q2_done = (q2_farm_done and q2_vic_done)
+
+                -- State Machine Decision
+                if not q1_done then
+                    CurrentActiveQuest = "Quest1"
+                    print("[QuestScanner] 🟡 สถานะ: Quest1 (เก็บดอกไม้)")
+                elseif not q2_done then
+                    CurrentActiveQuest = "Quest2"
+                    print("[QuestScanner] 🟡 สถานะ: Quest2 (ลงฟาร์ม)")
+                else
+                    CurrentActiveQuest = "AllDone"
+                    print("[QuestScanner] 🟢 สถานะ: AllDone (เควสทั้งหมดที่ทำไว้สำเร็จแล้ว)")
+                end
+                
+                clickButton(collectablesBtn)
+            end
+        end
+        task.wait(30)
+    end
+end)
+
+-- ==================================================================
+-- [[ 5. Quest Executor (The Brain) ]] --
+-- ==================================================================
+task.spawn(function()
+    while true do
+        if CurrentActiveQuest == "Quest1" then
+            if isLobby then
+                DoQuestFlower()
+            else
+                print("⚠️ Quest 1 เป็นเควส Lobby แต่ตอนนี้อยู่ในด่าน! เด้งกลับ Lobby...")
+                forceRestartMatch = true
+                ReturnToLobby()
+            end
+        elseif CurrentActiveQuest == "Quest2" then
+            if isLobby then
+                SetupLobbyToFarm()
+            else
+                DoQuest25WinFarm()
+            end
+        elseif CurrentActiveQuest == "AllDone" then
+            if not isLobby then
+                print("🟢 เควสทั้งหมดเสร็จแล้ว! เด้งกลับ Lobby...")
+                forceRestartMatch = true
+                ReturnToLobby()
+            else
+                print("✅ เควสเสร็จหมดแล้ว ส่งต่อไปยัง Volcano Hell...")
+                local hellUrl = "https://raw.githubusercontent.com/txxkb11246-star/test/refs/heads/main/valconohell"
+                pcall(function() loadstring(game:HttpGet(hellUrl))() end)
+                return
+            end
+        end
+        task.wait(2)
+    end
+end)
