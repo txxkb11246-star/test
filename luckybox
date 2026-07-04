@@ -997,16 +997,10 @@ task.spawn(function()
                 DoQuest25WinFarm()
             end
         elseif CurrentActiveQuest == "AllDone" then
-            if not isLobby then
-                print("🟢 เควสทั้งหมดเสร็จแล้ว! เด้งกลับ Lobby...")
-                forceRestartMatch = true
-                ReturnToLobby()
-            else
-                print("✅ เควสเสร็จหมดแล้ว ส่งต่อไปยัง Volcano Hell...")
-                local hellUrl = "https://raw.githubusercontent.com/txxkb11246-star/test/refs/heads/main/valconohell"
-                pcall(function() loadstring(game:HttpGet(hellUrl))() end)
-                return
-            end
+            print("✅ เควสเสร็จหมดแล้ว ส่งต่อไปยัง Volcano Hell...")
+            local hellUrl = "https://raw.githubusercontent.com/txxkb11246-star/test/refs/heads/main/valconohell"
+            pcall(function() loadstring(game:HttpGet(hellUrl))() end)
+            return
         end
         task.wait(2)
     end
