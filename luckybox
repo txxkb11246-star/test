@@ -965,6 +965,7 @@ task.spawn(function()
                         print("[QuestScanner] 🟡 สถานะ: Quest2 (ลงฟาร์ม)")
                     else
                         CurrentActiveQuest = "AllDone"
+                        forceRestartMatch = true
                         print("[QuestScanner] 🟢 สถานะ: AllDone (เควสทั้งหมดที่ทำไว้สำเร็จแล้ว)")
                     end
                 else
@@ -998,10 +999,19 @@ task.spawn(function()
                 DoQuest25WinFarm()
             end
         elseif CurrentActiveQuest == "AllDone" then
-            print("✅ เควสเสร็จหมดแล้ว ส่งต่อไปยัง Volcano Hell...")
-            local hellUrl = "https://raw.githubusercontent.com/txxkb11246-star/test/refs/heads/main/valconohell"
-            pcall(function() loadstring(game:HttpGet(hellUrl))() end)
-            return
+            if not isLobby then
+                print("🟢 เควสทั้งหมดเสร็จแล้ว! เด้งกลับ Lobby ทันทีเพื่อเตรียมตัวไป Hell...")
+                forceRestartMatch = true
+                ReturnToLobby()
+            else
+                print("✅ เควสเสร็จหมดแล้ว ส่งต่อไปยัง Volcano Hell...")
+                local hellUrl = "https://raw.githubusercontent.com/txxkb11246-star/test/refs/heads/main/valconohell"
+                local success, err = pcall(function() loadstring(game:HttpGet(hellUrl))() end)
+                if not success then
+                    warn("❌ ไม่สามารถรัน Volcano Hell ได้: " .. tostring(err))
+                end
+                return
+            end
         end
         task.wait(2)
     end
