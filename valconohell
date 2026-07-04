@@ -1316,8 +1316,7 @@ task.spawn(function()
                 if item_victory then
                     local remaining = getAvailableCount(item_victory)
                     if remaining > 0 then
-                        print("🔄 [Quest Scanner] ตรวจพบว่าเควสรายวันรีเซ็ตแล้ว (เหลือ: " .. tostring(remaining) .. ")! ทำการ Hop กลับ Lobby...")
-                        task.wait(2)
+                        print("🔄 [Quest Scanner] ตรวจพบว่าเควสรายวันรีเซ็ตแล้ว (เหลือ: " .. tostring(remaining) .. ")! ทำการ Hop กลับ Lobby ทันที...")
                         TeleportService:Teleport(LOBBY_PLACE_ID, LP)
                     end
                 else
