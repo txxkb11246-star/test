@@ -28,6 +28,12 @@ task.wait(10)
 
 local isLobby = isInLobby()
 
+if not isLobby and #Players:GetPlayers() > 1 then
+    print("⚠️ ตรวจพบผู้เล่นอื่นในด่านฟาร์ม! เด้งกลับ Lobby ทันทีเพื่อความปลอดภัย...")
+    pcall(function() TeleportService:Teleport(LOBBY_PLACE_ID, Player) end)
+    return
+end
+
 print(isLobby and "🚀 [AutoFarm] เกมโหลดเสร็จสมบูรณ์ (Lobby) เริ่มต้นระบบ Gatekeeper..." or "🚀 [AutoFarm] เกมโหลดเสร็จสมบูรณ์ (Match) เริ่มฟาร์ม...")
 
 -- ==================================================================
@@ -597,7 +603,6 @@ local function ReturnToLobby()
         pcall(function()
             TeleportService:Teleport(LOBBY_PLACE_ID, Player)
         end)
-        task.wait(5)
     end
 end
 
