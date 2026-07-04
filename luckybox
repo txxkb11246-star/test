@@ -934,35 +934,52 @@ task.spawn(function()
             clickButton(collectablesBtn)
             task.wait(1)
             
-            -- กดเลือก Tab lucky26 (Part 1)
             local gameGui = Player:WaitForChild("PlayerGui", 5):FindFirstChild("GameGui")
+            local q1_done = false
+            local q2_done = false
+            local item_flower_found = false
+            local item_victory_found = false
+
             if gameGui then
-                local tab = gameGui.Screen.Middle.Collectables:FindFirstChild("Right") and gameGui.Screen.Middle.Collectables.Right:FindFirstChild("lucky26")
-                if tab then
-                    clickButton(tab)
+                -- 📌 สแกน Part 1 (lucky26)
+                local tab1 = gameGui.Screen.Middle.Collectables:FindFirstChild("Right") and gameGui.Screen.Middle.Collectables.Right:FindFirstChild("lucky26")
+                if tab1 then
+                    clickButton(tab1)
                     task.wait(1)
                 end
-            end
-            
-            if isDataLoaded(scrollingFrame) then
-                task.wait(1)
                 
-                -- Check Quest 1 (Flower)
-                local item_flower = scrollingFrame:WaitForChild("cl_lucky26_flower", 3)
-                local q1_done = false
-                if item_flower then
-                    q1_done = (getAvailableCount(item_flower) == 0)
-                end
-                
-                -- Check Quest 2 (Victory)
-                local item_victory = scrollingFrame:WaitForChild("cl_lucky26_victory", 3)
-                local q2_done = false
-                if item_victory then 
-                    q2_done = (getAvailableCount(item_victory) == 0) 
+                if isDataLoaded(scrollingFrame) then
+                    task.wait(1)
+                    -- Check Quest 1 (Flower)
+                    local item_flower = scrollingFrame:WaitForChild("cl_lucky26_flower", 3)
+                    if item_flower then
+                        item_flower_found = true
+                        q1_done = (getAvailableCount(item_flower) == 0)
+                    end
+                    
+                    -- Check Quest 2 (Victory)
+                    local item_victory = scrollingFrame:WaitForChild("cl_lucky26_victory", 3)
+                    if item_victory then 
+                        item_victory_found = true
+                        q2_done = (getAvailableCount(item_victory) == 0) 
+                    end
                 end
 
-                if item_flower and item_victory then
-                    -- State Machine Decision
+                -- 📌 สแกน Part 2 (lucky26v2) เผื่ออนาคต
+                local tab2 = gameGui.Screen.Middle.Collectables:FindFirstChild("Right") and gameGui.Screen.Middle.Collectables.Right:FindFirstChild("lucky26v2")
+                if tab2 then
+                    clickButton(tab2)
+                    task.wait(1)
+                end
+                
+                if isDataLoaded(scrollingFrame) then
+                    task.wait(1)
+                    -- [Future Use] Check quests in Part 2 here if needed
+                    -- local item_something = scrollingFrame:WaitForChild("cl_lucky26v2_something", 3)
+                end
+
+                -- State Machine Decision
+                if item_flower_found and item_victory_found then
                     if not q1_done then
                         CurrentActiveQuest = "Quest1"
                         print("[QuestScanner] 🟡 สถานะ: Quest1 (เก็บดอกไม้)")
@@ -980,11 +997,12 @@ task.spawn(function()
                         print("[QuestScanner] 📌 สถานะเริ่มต้นเมื่อเข้าเกมคือ: " .. tostring(InitialQuestState))
                     end
                 else
-                    print("[QuestScanner] ⏳ ข้อมูลเควสยังโหลดไม่ครบ สกิปการเช็คครั้งนี้...")
+                    print("[QuestScanner] ⏳ ข้อมูลเควสหลักยังโหลดไม่ครบ สกิปการเช็คครั้งนี้...")
                 end
-                
-                clickButton(collectablesBtn)
             end
+            
+            -- ปิด UI
+            clickButton(collectablesBtn)
         end
         task.wait(30)
     end
