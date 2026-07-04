@@ -25,7 +25,8 @@ task.spawn(function()
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
     
     local function TryCollect(obj)
-        if obj.Name == "Collectable" and obj:GetAttribute("CollectionId") == "lucky26" then
+        local colId = obj:GetAttribute("CollectionId")
+        if colId == "lucky26" or colId == "lucky26v2" then
             local id = obj:GetAttribute("ID")
             local itemId = obj:GetAttribute("ItemId") or "ไม่ทราบชื่อ"
             
