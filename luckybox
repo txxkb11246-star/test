@@ -942,28 +942,33 @@ task.spawn(function()
                 task.wait(1)
                 
                 -- Check Quest 1 (Flower)
-                local item_flower = scrollingFrame:FindFirstChild("cl_lucky26_flower")
+                local item_flower = scrollingFrame:WaitForChild("cl_lucky26_flower", 3)
                 local q1_done = false
                 if item_flower then
                     q1_done = (getAvailableCount(item_flower) == 0)
                 end
                 
                 -- Check Quest 2 (Victory)
-                local item_victory = scrollingFrame:FindFirstChild("cl_lucky26_victory")
+                local item_victory = scrollingFrame:WaitForChild("cl_lucky26_victory", 3)
                 local q2_done = false
-                
-                if item_victory then q2_done = (getAvailableCount(item_victory) == 0) end
+                if item_victory then 
+                    q2_done = (getAvailableCount(item_victory) == 0) 
+                end
 
-                -- State Machine Decision
-                if not q1_done then
-                    CurrentActiveQuest = "Quest1"
-                    print("[QuestScanner] 🟡 สถานะ: Quest1 (เก็บดอกไม้)")
-                elseif not q2_done then
-                    CurrentActiveQuest = "Quest2"
-                    print("[QuestScanner] 🟡 สถานะ: Quest2 (ลงฟาร์ม)")
+                if item_flower and item_victory then
+                    -- State Machine Decision
+                    if not q1_done then
+                        CurrentActiveQuest = "Quest1"
+                        print("[QuestScanner] 🟡 สถานะ: Quest1 (เก็บดอกไม้)")
+                    elseif not q2_done then
+                        CurrentActiveQuest = "Quest2"
+                        print("[QuestScanner] 🟡 สถานะ: Quest2 (ลงฟาร์ม)")
+                    else
+                        CurrentActiveQuest = "AllDone"
+                        print("[QuestScanner] 🟢 สถานะ: AllDone (เควสทั้งหมดที่ทำไว้สำเร็จแล้ว)")
+                    end
                 else
-                    CurrentActiveQuest = "AllDone"
-                    print("[QuestScanner] 🟢 สถานะ: AllDone (เควสทั้งหมดที่ทำไว้สำเร็จแล้ว)")
+                    print("[QuestScanner] ⏳ ข้อมูลเควสยังโหลดไม่ครบ สกิปการเช็คครั้งนี้...")
                 end
                 
                 clickButton(collectablesBtn)
