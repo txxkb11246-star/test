@@ -948,15 +948,11 @@ task.spawn(function()
                     q1_done = (getAvailableCount(item_flower) == 0)
                 end
                 
-                -- Check Quest 2 (MapFarm + Victory)
-                local item_mapfarm = scrollingFrame:FindFirstChild("cl_lucky26_mapfarm")
+                -- Check Quest 2 (Victory)
                 local item_victory = scrollingFrame:FindFirstChild("cl_lucky26_victory")
-                local q2_farm_done = false
-                local q2_vic_done = false
+                local q2_done = false
                 
-                if item_mapfarm then q2_farm_done = (getAvailableCount(item_mapfarm) == 0) end
-                if item_victory then q2_vic_done = (getAvailableCount(item_victory) == 0) end
-                local q2_done = (q2_farm_done and q2_vic_done)
+                if item_victory then q2_done = (getAvailableCount(item_victory) == 0) end
 
                 -- State Machine Decision
                 if not q1_done then
