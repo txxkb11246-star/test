@@ -59,6 +59,19 @@ task.spawn(function()
         task.wait(5)
     end
 end)
+
+-- ==================================================================
+-- [[ 💎 EVENT: AUTO COLLECT DIAMOND ]] --
+-- ==================================================================
+task.spawn(function()
+    while true do
+        pcall(function()
+            local args = {}
+            game:GetService("ReplicatedStorage"):WaitForChild("RemoteEvents"):WaitForChild("CollectableCollectDiamond"):FireServer(unpack(args))
+        end)
+        task.wait(300)
+    end
+end)
 -- [[ 🗑️ สิ้นสุด EVENT: AUTO COLLECT LUCKYBOX ]] --
 -- ==================================================================
 
