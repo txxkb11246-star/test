@@ -1030,26 +1030,30 @@ task.spawn(function()
         elseif CurrentActiveQuest == "AllDone" then
             if not isLobby then
                 if InitialQuestState == "AllDone" then
-                    print("✅ เข้าเกมมาก็เควสเสร็จอยู่แล้ว (น่าจะอยู่ใน Hell) ส่งไม้ต่อให้ Hell ทันที...")
-                    local hellUrl = "https://raw.githubusercontent.com/txxkb11246-star/test/refs/heads/main/valconohell"
-                    local success, err = pcall(function() loadstring(game:HttpGet(hellUrl))() end)
-                    if not success then
-                        warn("❌ ไม่สามารถรัน Volcano Hell ได้: " .. tostring(err))
+                    if not getgenv().HellScriptLoaded then
+                        getgenv().HellScriptLoaded = true
+                        print("✅ เข้าเกมมาก็เควสเสร็จอยู่แล้ว (น่าจะอยู่ใน Hell) ส่งไม้ต่อให้ Hell ทันที...")
+                        local hellUrl = "https://raw.githubusercontent.com/txxkb11246-star/test/refs/heads/main/valconohell"
+                        local success, err = pcall(function() loadstring(game:HttpGet(hellUrl))() end)
+                        if not success then
+                            warn("❌ ไม่สามารถรัน Volcano Hell ได้: " .. tostring(err))
+                        end
                     end
-                    return
                 else
                     print("🟢 เพิ่งทำเควสเสร็จในด่านนี้! เด้งกลับ Lobby ทันทีเพื่อเตรียมตัวไป Hell...")
                     forceRestartMatch = true
                     ReturnToLobby()
                 end
             else
-                print("✅ เควสเสร็จหมดแล้ว ส่งต่อไปยัง Volcano Hell...")
-                local hellUrl = "https://raw.githubusercontent.com/txxkb11246-star/test/refs/heads/main/valconohell"
-                local success, err = pcall(function() loadstring(game:HttpGet(hellUrl))() end)
-                if not success then
-                    warn("❌ ไม่สามารถรัน Volcano Hell ได้: " .. tostring(err))
+                if not getgenv().HellScriptLoaded then
+                    getgenv().HellScriptLoaded = true
+                    print("✅ เควสเสร็จหมดแล้ว ส่งต่อไปยัง Volcano Hell...")
+                    local hellUrl = "https://raw.githubusercontent.com/txxkb11246-star/test/refs/heads/main/valconohell"
+                    local success, err = pcall(function() loadstring(game:HttpGet(hellUrl))() end)
+                    if not success then
+                        warn("❌ ไม่สามารถรัน Volcano Hell ได้: " .. tostring(err))
+                    end
                 end
-                return
             end
         end
         task.wait(2)
