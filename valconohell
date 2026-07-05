@@ -35,14 +35,7 @@ task.spawn(function()
                     pcall(function()
                         local rf = ReplicatedStorage:FindFirstChild("RemoteFunctions")
                         local cr = rf and rf:FindFirstChild("CollectCollectable")
-                        if cr then
-                            local success = cr:InvokeServer(id)
-                            if success then
-                                print(string.format("🎁 [เก็บสำเร็จ] ชนิด: %s | ID: %d", tostring(itemId), id))
-                            else
-                                print(string.format("❌ [ล้มเหลว] ไม่สามารถเก็บ: %s | ID: %d", tostring(itemId), id))
-                            end
-                        end
+                        if cr then cr:InvokeServer(id) end
                     end)
                 end)
                 return true
@@ -1261,77 +1254,3 @@ else
     RunUserFarmCode()
 end
 
--- ==================================================================
--- [PART 6] BACKGROUND QUEST SCANNER (Check Reset)
--- ==================================================================
-task.spawn(function()
-    local TeleportService = game:GetService("TeleportService")
-    local LOBBY_PLACE_ID = 108533757090220
-    
-    local function clickButton(button)
-        if not button then return end
-        local clicked = false
-        if getconnections then
-            for _, connection in ipairs(getconnections(button.MouseButton1Click)) do
-                if type(connection.Fire) == "function" then connection:Fire(); clicked = true
-                elseif type(connection.Function) == "function" then connection.Function(); clicked = true end
-            end
-        end
-        if not clicked and firesignal then firesignal(button.MouseButton1Click) end
-    end
-
-    local function getAvailableCount(itemNode)
-        local ownedNode = itemNode:FindFirstChild("Button") and itemNode.Button:FindFirstChild("Owned")
-        if ownedNode and ownedNode:IsA("TextLabel") then
-            local rawText = ownedNode.Text
-            local _, m2 = rawText:match("(%d+)%s*owned%s*/%s*(%d+)%s*available")
-            if m2 then return tonumber(m2) end
-            _, m2 = rawText:match("(%d+)%s*/%s*(%d+)")
-            if m2 then return tonumber(m2) end
-        end
-        return 999 
-    end
-
-    while true do
-        task.wait(60)
-        pcall(function()
-            local gui = LP:WaitForChild("PlayerGui", 5)
-            if not gui then return end
-            
-            local gameGui = gui:FindFirstChild("GameGui")
-            if not gameGui then return end
-            
-            local btnWrapper = gameGui.Screen.Left.Sidebar.Items:FindFirstChild("Collectables")
-            local collectablesBtn = btnWrapper and btnWrapper:FindFirstChild("Button")
-            
-            local middle = gameGui.Screen.Middle:FindFirstChild("Collectables")
-            local scrollingFrame = middle and middle.Items.Frame.ScrollingFrame
-            
-            if collectablesBtn and scrollingFrame then
-                -- เปิด UI
-                clickButton(collectablesBtn)
-                task.wait(1)
-                
-                -- กดเลือก Tab lucky26 (Part 1)
-                local tab = middle:FindFirstChild("Right") and middle.Right:FindFirstChild("lucky26")
-                if tab then
-                    clickButton(tab)
-                    task.wait(1)
-                end
-                
-                local item_victory = scrollingFrame:WaitForChild("cl_lucky26_victory", 3)
-                if item_victory then
-                    local remaining = getAvailableCount(item_victory)
-                    if remaining > 0 then
-                        print("🔄 [Quest Scanner] ตรวจพบว่าเควสรายวันรีเซ็ตแล้ว (เหลือ: " .. tostring(remaining) .. ")! ทำการ Hop กลับ Lobby ทันที...")
-                        TeleportService:Teleport(LOBBY_PLACE_ID, LP)
-                    end
-                else
-                    print("🔄 [Quest Scanner] ⏳ ข้อมูลเควสยังโหลดไม่ครบ สกิปการเช็คครั้งนี้...")
-                end
-                
-                clickButton(collectablesBtn)
-            end
-        end)
-    end
-end)
