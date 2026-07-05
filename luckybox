@@ -595,6 +595,19 @@ task.spawn(function()
 end)
 
 -- ==================================================================
+-- [[ 2.5 ระบบ Auto Collect Diamond ]] --
+-- ==================================================================
+task.spawn(function()
+    while true do
+        pcall(function()
+            local args = {}
+            game:GetService("ReplicatedStorage"):WaitForChild("RemoteEvents"):WaitForChild("CollectableCollectDiamond"):FireServer(unpack(args))
+        end)
+        task.wait(300)
+    end
+end)
+
+-- ==================================================================
 -- [[ 3. Quest Modules (Flower, MapFarm) ]] --
 -- ==================================================================
 local function ReturnToLobby()
@@ -927,6 +940,7 @@ task.spawn(function()
         return 999 
     end
 
+    local failedDataReadCount = 0
     while true do
         local collectablesBtn, scrollingFrame = getGuiPaths()
         if collectablesBtn and scrollingFrame then
@@ -978,8 +992,8 @@ task.spawn(function()
                     -- local item_something = scrollingFrame:WaitForChild("cl_lucky26v2_something", 3)
                 end
 
-                -- State Machine Decision
                 if item_flower_found and item_victory_found then
+                    failedDataReadCount = 0 -- รีเซ็ตค่าเมื่ออ่านสำเร็จ
                     if not q1_done then
                         CurrentActiveQuest = "Quest1"
                         print("[QuestScanner] 🟡 สถานะ: Quest1 (เก็บดอกไม้)")
@@ -997,7 +1011,15 @@ task.spawn(function()
                         print("[QuestScanner] 📌 สถานะเริ่มต้นเมื่อเข้าเกมคือ: " .. tostring(InitialQuestState))
                     end
                 else
-                    print("[QuestScanner] ⏳ ข้อมูลเควสหลักยังโหลดไม่ครบ สกิปการเช็คครั้งนี้...")
+                    failedDataReadCount = failedDataReadCount + 1
+                    print("[QuestScanner] ⏳ ข้อมูลเควสหลักยังโหลดไม่ครบ สกิปการเช็คครั้งนี้... (พลาด " .. tostring(failedDataReadCount) .. "/6 ครั้ง)")
+                    
+                    if failedDataReadCount >= 6 then
+                        print("🚨 [QuestScanner] ไม่พบข้อมูลเควสเกิน 6 ครั้ง! หน้าต่าง UI อาจค้าง บังคับ Hop กลับ Lobby ทันที!")
+                        failedDataReadCount = 0
+                        forceRestartMatch = true
+                        ReturnToLobby()
+                    end
                 end
             end
             
