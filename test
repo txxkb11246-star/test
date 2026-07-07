@@ -1423,6 +1423,256 @@ local function SetupLobbyToIsland()
     end
 end
 
+
+local function SetupLobbyToToxic()
+    print("🏠 [Teleport] กำลังเดินหาประตูวาปไป map_toxic (Quest 5)...")
+    local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
+    
+    local farmConfig = {
+        { pos = CFrame.new(85.05, 71.73, 788.8, 1,0,0,0,1,0,0,0,1), mapFunc = "LobbySetMap_8", playerFunc = "LobbySetMaxPlayers_8", startFunc = "StartLobby_8" },
+        { pos = CFrame.new(97.05, 71.73, 788.8, 1,0,0,0,1,0,0,0,1), mapFunc = "LobbySetMap_5", playerFunc = "LobbySetMaxPlayers_5", startFunc = "StartLobby_5" },
+        { pos = CFrame.new(109.05, 71.73, 788.8, 1,0,0,0,1,0,0,0,1), mapFunc = "LobbySetMap_7", playerFunc = "LobbySetMaxPlayers_7", startFunc = "StartLobby_7" },
+        { pos = CFrame.new(121.05, 71.73, 788.8, 1,0,0,0,1,0,0,0,1), mapFunc = "LobbySetMap_6", playerFunc = "LobbySetMaxPlayers_6", startFunc = "StartLobby_6" }
+    }
+
+    local function warpToFarm(cfg)
+        local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then hrp.CFrame = cfg.pos end
+    end
+
+    local function setupLobby(cfg)
+        task.wait(4)
+        rf:WaitForChild(cfg.mapFunc):InvokeServer("map_toxic")
+        task.wait(1)
+        for i = 3, 1, -1 do
+            rf:WaitForChild(cfg.playerFunc):InvokeServer(i)
+            task.wait(0.5)
+        end
+        task.wait(1)
+        pcall(function() rf:WaitForChild(cfg.startFunc):InvokeServer() end)
+        task.wait(4)
+    end
+
+    while CurrentActiveQuest == "Quest5" and isLobby do
+        local randomWait = math.random(1, 5)
+        task.wait(randomWait)
+
+        local index = math.random(1, #farmConfig)
+        local cfg = farmConfig[index]
+        
+        warpToFarm(cfg)
+        setupLobby(cfg)
+        
+        if isLobby then
+            pcall(function()
+                local closeBtn = Player.PlayerGui.GameGui.Screen.Middle.MapPickerLobby.Items.Close
+                for _, conn in ipairs(getconnections(closeBtn.MouseButton1Click)) do conn:Fire() end
+            end)
+            task.wait(1)
+        end
+    end
+end
+
+local function DoQuestToxicFarm()
+    print("☣️ STARTING MAP TOXIC LOGIC (QUEST 5)...")
+    
+    local RemoteFunctions = ReplicatedStorage:WaitForChild("RemoteFunctions")
+    local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
+    local PlaceUnit = RemoteFunctions:WaitForChild("PlaceUnit")
+    local UpgradeUnit = RemoteFunctions:WaitForChild("UpgradeUnit")
+    local ChangeTickSpeed = RemoteFunctions:WaitForChild("ChangeTickSpeed")
+    
+    local hpConnection = nil
+    local placedUnits = {}
+    local hasAppliedSettings = false
+
+    local function setSpeed(multiplier) pcall(function() ChangeTickSpeed:InvokeServer(multiplier) end) end
+    local function x2() setSpeed(2) end
+    local function low() pcall(function() RemoteFunctions.ChangeSetting:InvokeServer("st_graphics", 2) end) end
+    local function mvol() pcall(function() RemoteFunctions.ChangeSetting:InvokeServer("st_background_music_volume", 1) end) end
+    local function fxvol() pcall(function() RemoteFunctions.ChangeSetting:InvokeServer("st_fx_volume", 1) end) end
+
+    local function activateAutoSkip()
+        task.spawn(function()
+            local gui = Player.PlayerGui:WaitForChild("GameGuiNoInset", 30)
+            if not gui then return end
+            local btn = gui:WaitForChild("Screen", 10):WaitForChild("Top", 10):WaitForChild("WaveControls", 10):WaitForChild("AutoSkip", 10)
+            if not btn then return end
+            local title = btn:WaitForChild("Title", 10)
+
+            while task.wait(1) do
+                if forceRestartMatch then break end 
+                if title.Text == "Auto Skip: Off" then
+                    pcall(function() for _, conn in ipairs(getconnections(btn.MouseButton1Click)) do conn:Fire() end end)
+                end
+            end
+        end)
+    end
+
+    local function waitUntilCash(target) 
+        local gui = Player:WaitForChild("PlayerGui"):WaitForChild("GameGui", 60)
+        if not gui then return end
+        local screen = gui:WaitForChild("Screen", 60)
+        if not screen then return end
+        local bottom = screen:WaitForChild("Bottom", 60)
+        if not bottom then return end
+        local currencyDisplay = bottom:WaitForChild("CurrencyDisplay", 60)
+        if not currencyDisplay then return end
+        local cashLabel = currencyDisplay:WaitForChild("Cash", 60)
+        if not cashLabel then return end
+        
+        while true do 
+            if forceRestartMatch then return end
+            local cleanCashStr = cashLabel.Text:gsub("[^%d]", "")
+            local currentCash = tonumber(cleanCashStr) or 0
+            if currentCash >= target then break end
+            task.wait(0.3) 
+        end 
+    end
+    
+    local function findNewUnitId(unitName) 
+        unitName = unitName or "unit_tomato_plant"
+        for _, u in pairs(Workspace.Map.Entities:GetChildren()) do 
+            local id = u:GetAttribute("ID")
+            if u.Name == unitName and id and not placedUnits[id] then 
+                placedUnits[id] = u
+                return id 
+            end 
+        end
+        return nil 
+    end
+    
+    local function placeUnitSafe(unitName, argsData) 
+        local id = nil
+        local originalPos = argsData.Position
+        local rot = argsData.Rotation or 0
+        
+        repeat 
+            if forceRestartMatch then return nil end
+            
+            local ang = math.random() * math.pi * 2
+            local r = math.sqrt(math.random()) * 1.5
+            local tPos = Vector3.new(originalPos.X + math.cos(ang) * r, originalPos.Y, originalPos.Z + math.sin(ang) * r)
+            
+            argsData.Position = tPos
+            argsData.CF = CFrame.new(tPos) * CFrame.Angles(0, math.rad(rot), 0)
+            
+            pcall(function() PlaceUnit:InvokeServer(unitName, argsData) end)
+            task.wait(0.5)
+            id = findNewUnitId(unitName) 
+        until id ~= nil or forceRestartMatch
+        return id 
+    end
+    
+    local function upgradeUnitById(id) 
+        if id and placedUnits[id] then pcall(function() UpgradeUnit:InvokeServer(id) end) end 
+    end
+
+    local function again()
+        pcall(function() RemoteFunctions.RestartGame:InvokeServer() end)
+    end
+
+    local function monitorBaseHP()
+        task.spawn(function()
+            local map = Workspace:WaitForChild("Map", 60)
+            if not map then return end
+            local baseHP = map:WaitForChild("BaseHP", 60)
+            if not baseHP then return end
+            local function checkHP()
+                pcall(function()
+                    local val = baseHP.Value
+                    if tonumber(val) and tonumber(val) <= 0 and not forceRestartMatch then
+                        forceRestartMatch = true
+                        task.wait(3)
+                        again()
+                    end
+                end)
+            end
+            checkHP()
+            pcall(function() hpConnection = baseHP.Changed:Connect(checkHP) end)
+        end)
+    end
+
+    RemoteEvents.ShowGameEnd.OnClientEvent:Connect(function()
+        if not forceRestartMatch then
+            forceRestartMatch = true
+            task.wait(3)
+            again()
+        end
+    end)
+
+    local function runSession()
+        forceRestartMatch = false
+        placedUnits = {}
+        if hpConnection then hpConnection:Disconnect(); hpConnection = nil end
+        monitorBaseHP()
+        activateAutoSkip()
+
+        if not hasAppliedSettings then
+            hasAppliedSettings = true
+            task.spawn(function()
+                low(); mvol(); fxvol()
+                x2()
+            end)
+        end
+
+        task.wait(2)
+        pcall(function() RemoteFunctions:WaitForChild("PlaceDifficultyVote"):InvokeServer("dif_easy") end)
+        task.wait(5)
+        
+        -- วาง Trident ตัวที่ 1
+        waitUntilCash(500)
+        local id1 = nil
+        if not forceRestartMatch then
+            id1 = placeUnitSafe("unit_trident", {
+                ["CF"] = CFrame.new(-8.09512043, 1.99999893, 324.542236, -1, 0, -8.74227766e-08, 0, 1, 0, 8.74227766e-08, 0, -1),
+                ["Position"] = Vector3.new(-8.095120429992676, 1.999998927116394, 324.542236328125),
+                ["Valid"] = true,
+                ["Rotation"] = 180,
+            })
+        end
+
+        -- วาง Trident ตัวที่ 2
+        waitUntilCash(500)
+        local id2 = nil
+        if not forceRestartMatch then
+            id2 = placeUnitSafe("unit_trident", {
+                ["CF"] = CFrame.new(6.23690224, 1.99999893, 324.628021, -1, 0, -8.74227766e-08, 0, 1, 0, 8.74227766e-08, 0, -1),
+                ["Position"] = Vector3.new(6.236902236938477, 1.999998927116394, 324.6280212402344),
+                ["Valid"] = true,
+                ["Rotation"] = 180,
+            })
+        end
+        
+        -- อัปเกรด Trident 1
+        if id1 and not forceRestartMatch then
+            waitUntilCash(700); upgradeUnitById(id1)
+            waitUntilCash(1050); upgradeUnitById(id1)
+            waitUntilCash(1275); upgradeUnitById(id1)
+            waitUntilCash(1500); upgradeUnitById(id1)
+            waitUntilCash(2000); upgradeUnitById(id1)
+            print("✅ Trident 1 upgraded!")
+        end
+
+        -- อัปเกรด Trident 2
+        if id2 and not forceRestartMatch then
+            waitUntilCash(700); upgradeUnitById(id2)
+            waitUntilCash(1050); upgradeUnitById(id2)
+            waitUntilCash(1275); upgradeUnitById(id2)
+            waitUntilCash(1500); upgradeUnitById(id2)
+            waitUntilCash(2000); upgradeUnitById(id2)
+            print("✅ Trident 2 upgraded!")
+        end
+
+        while not forceRestartMatch do task.wait(0.5) end
+    end
+
+    while CurrentActiveQuest == "Quest5" do
+        runSession()
+        task.wait(2)
+    end
+end
+
 -- ==================================================================
 -- [[ 4. ระบบ Auto Quest Scanner & State Manager ]] --
 task.spawn(function()
@@ -1493,6 +1743,8 @@ task.spawn(function()
             local item_jungle_found = false
             local q4_done = false
             local item_island_found = false
+            local q5_done = false
+            local item_toxic_found = false
 
             if gameGui then
                 -- 📌 สแกน Part 1 (lucky26)
@@ -1541,9 +1793,16 @@ task.spawn(function()
                         item_island_found = true
                         q4_done = (getAvailableCount(item_island) == 0)
                     end
+
+                    -- Check Quest 5 (Toxic)
+                    local item_toxic = scrollingFrame:WaitForChild("cl_lucky26v2_maptoxic", 3)
+                    if item_toxic then
+                        item_toxic_found = true
+                        q5_done = (getAvailableCount(item_toxic) == 0)
+                    end
                 end
 
-                if item_flower_found and item_mapfarm_found and item_jungle_found and item_island_found then
+                if item_flower_found and item_mapfarm_found and item_jungle_found and item_island_found and item_toxic_found then
                     failedDataReadCount = 0 -- รีเซ็ตค่าเมื่ออ่านสำเร็จ
                     local oldQuest = CurrentActiveQuest
                     
@@ -1559,6 +1818,9 @@ task.spawn(function()
                     elseif not q4_done then
                         CurrentActiveQuest = "Quest4"
                         if oldQuest ~= "Quest4" then print("[QuestScanner] 🟡 สถานะ: Quest4 (ลงเกาะ Island)") end
+                    elseif not q5_done then
+                        CurrentActiveQuest = "Quest5"
+                        if oldQuest ~= "Quest5" then print("[QuestScanner] 🟡 สถานะ: Quest5 (ลง Toxic Facility)") end
                     else
                         CurrentActiveQuest = "AllDone"
                         if oldQuest ~= "AllDone" then print("[QuestScanner] 🟢 สถานะ: AllDone (เควสทั้งหมดที่ทำไว้สำเร็จแล้ว)") end
@@ -1628,6 +1890,12 @@ task.spawn(function()
                 SetupLobbyToIsland()
             else
                 DoQuestIslandFarm()
+            end
+        elseif CurrentActiveQuest == "Quest5" then
+            if isLobby then
+                SetupLobbyToToxic()
+            else
+                DoQuestToxicFarm()
             end
         elseif CurrentActiveQuest == "AllDone" then
             if not isLobby then
